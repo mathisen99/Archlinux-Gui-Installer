@@ -12,12 +12,18 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# 2. Check Network
+# 2. Check Network & Space
 echo ">>> Checking network connectivity..."
 if ! ping -c 1 google.com &> /dev/null; then
     echo "Error: No internet connection. Please verify your network."
     exit 1
 fi
+
+echo ">>> Expanding COW space..."
+# Remount COW (RAM disk) to use more space. Required for Xorg install on standard ISOs.
+# We attempt to resize to 2G or 75% of RAM, whichever is safe? 
+# Simplest approach: Remount with size=4G (kernel handles limits if RAM is lower, usually OOMs, but better than instant fail)
+mount -o remount,size=4G /run/archiso/cow || echo "Warning: Failed to remount COW. Disk space might be low."
 
 # 3. Install Dependencies
 echo ">>> Installing Xorg and Window Manager..."
