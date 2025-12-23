@@ -108,9 +108,24 @@ fi
 # 5. Create xinitrc and Fluxbox config
 echo ">>> Configuring X session..."
 
-# Configure Fluxbox to be minimal (no toolbar)
-mkdir -p /root/.fluxbox
+# Configure Fluxbox to be minimal (no toolbar, dark theme)
+mkdir -p /root/.fluxbox/styles
+cat > /root/.fluxbox/styles/DarkSimple <<EOF
+style.name: DarkSimple
+window.title.focus.color: #1a1a1a
+window.title.unfocus.color: #1a1a1a
+window.label.focus.color: #1a1a1a
+window.label.unfocus.color: #1a1a1a
+window.label.focus.textColor: #ffffff
+window.label.unfocus.textColor: #808080
+window.justify: center
+window.borderWidth: 1
+window.borderColor: #333333
+toolbar.visible: false
+EOF
+
 cat > /root/.fluxbox/init <<EOF
+session.styleFile: /root/.fluxbox/styles/DarkSimple
 session.screen0.toolbar.visible: false
 session.screen0.tabs.usePixmap: false
 session.screen0.tabs.maxOver: false
