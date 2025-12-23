@@ -364,12 +364,15 @@ else
 fi
 grub-mkconfig -o /boot/grub/grub.cfg
 
-# Oh-My-Zsh (Optional, simplified)
+# Oh-My-Zsh
 if [[ "${SHELL_CHOICE}" == "zsh-ohmyzsh" ]]; then
-   # We can't easily run the automated install script inside chroot non-interactively without hacks.
-   # For MVP, we'll skip or just install it crudely if internet works.
-   # su - ${USERNAME} -c '...'
-   true 
+    log "Installing Oh-My-Zsh for user ${USERNAME}..."
+    # Install git and curl just in case (though base/base-devel usually has them, or we added them)
+    # We should ensure they are present.
+    pacman -S --noconfirm git curl
+    
+    # Run installer as the user
+    su - ${USERNAME} -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'
 fi
 
 EOF

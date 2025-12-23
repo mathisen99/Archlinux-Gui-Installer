@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strings"
 	"time"
 
 	"archgui/gui/internal/state"
@@ -17,7 +18,8 @@ import (
 )
 
 type InstallPage struct {
-	logOutput *widget.Entry
+	logOutput *widget.Label
+	scroll    *container.Scroll
 	logChan   chan string
 	fullLog   bytes.Buffer
 	started   bool
@@ -30,12 +32,10 @@ func (p *InstallPage) Title() string {
 }
 
 func (p *InstallPage) Content(config *state.InstallConfig, ctrl WizardController) fyne.CanvasObject {
-	p.logOutput = widget.NewMultiLineEntry()
-	p.logOutput.Disable()
-	// Make it fill space?
-	// In VContainer, we can wrap in Scroll
+	p.logOutput = widget.NewLabel("")
+	p.logOutput.TextStyle = fyne.TextStyle{Monospace: true}
+	p.scroll = container.NewScroll(p.logOutput)
 
-	// We delay start slightly to ensure UI renders
 	// We delay start slightly to ensure UI renders
 	if !p.started {
 		p.started = true
@@ -46,7 +46,7 @@ func (p *InstallPage) Content(config *state.InstallConfig, ctrl WizardController
 	return container.NewBorder(
 		widget.NewLabelWithStyle("Installing Arch Linux...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		nil, nil, nil,
-		container.NewScroll(p.logOutput),
+		p.scroll,
 	)
 }
 
@@ -114,6 +114,10 @@ func (p *InstallPage) processLogs() {
 	for {
 		select {
 		case msg := <-p.logChan:
+			// Filter spam
+			if strings.Contains(msg, "Failed to read: session") || strings.Contains(msg, "Setting default value") {
+				continue
+			}
 			pending.WriteString(msg)
 			pending.WriteByte('\n')
 		case <-ticker.C:
@@ -129,8 +133,7 @@ func (p *InstallPage) processLogs() {
 				// Update UI
 				fyne.Do(func() {
 					p.logOutput.SetText(fullContent)
-					p.logOutput.Refresh()                         // Auto-scroll handled by Scroll container usually
-					p.logOutput.CursorRow = len(p.logOutput.Text) // Attempt to scroll to end
+					p.scroll.ScrollToBottom()
 				})
 			}
 		}
