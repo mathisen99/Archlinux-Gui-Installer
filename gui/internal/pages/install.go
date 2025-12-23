@@ -45,7 +45,10 @@ func (p *InstallPage) Content(config *state.InstallConfig, ctrl WizardController
 func (p *InstallPage) RunInstall(config *state.InstallConfig, ctrl WizardController) {
 	// 1. Generate Config
 	// We need to disable Next/Back during install
-	ctrl.SetNextButtonEnabled(false)
+
+	fyne.Do(func() {
+		ctrl.SetNextButtonEnabled(false)
+	})
 	// Actually we can't go back either.
 
 	time.Sleep(500 * time.Millisecond) // UI settle
@@ -91,14 +94,12 @@ func (p *InstallPage) RunInstall(config *state.InstallConfig, ctrl WizardControl
 }
 
 func (p *InstallPage) AppendLog(msg string) {
-	// Append to entry
-	// Note: Concurrency safety
-	curr := p.logOutput.Text
-	p.logOutput.SetText(curr + msg + "\n")
-	p.logOutput.Refresh() // Force refresh
-
-	// Auto-scroll? MultiLineEntry doesn't have easy API for that yet in all versions
-	// But putting it in Scroll container helps if user scrolls.
+	str := msg + "\n"
+	fyne.Do(func() {
+		curr := p.logOutput.Text
+		p.logOutput.SetText(curr + str)
+		p.logOutput.Refresh()
+	})
 }
 
 func (p *InstallPage) OnNext(config *state.InstallConfig) error {
