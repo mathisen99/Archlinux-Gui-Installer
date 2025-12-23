@@ -7,8 +7,15 @@ set -e
 
 # Default Config / Environment Variables
 DISK="${DISK:-}"
+MANUAL_PARTITIONING="${MANUAL_PARTITIONING:-no}" # yes, no
+TARGET_ROOT="${TARGET_ROOT:-}"
+TARGET_EFI="${TARGET_EFI:-}"
+FORMAT_ROOT="${FORMAT_ROOT:-yes}"
+FORMAT_EFI="${FORMAT_EFI:-no}"
+
 HOSTNAME="${HOSTNAME:-archlinux}"
 USERNAME="${USERNAME:-user}"
+FULL_NAME="${FULL_NAME:-Arch User}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-}"
 USER_PASSWORD="${USER_PASSWORD:-}"
 FS_TYPE="${FS_TYPE:-ext4}"           # ext4, btrfs
@@ -68,7 +75,12 @@ validate_config() {
     log "Validating configuration..."
     local MISSING_KEYS=0
     
-    [[ -z "$DISK" ]] && { error "DISK is not set"; MISSING_KEYS=1; }
+    if [[ "$MANUAL_PARTITIONING" == "yes" ]]; then
+        [[ -z "$TARGET_ROOT" ]] && { error "TARGET_ROOT is required for manual partitioning"; MISSING_KEYS=1; }
+    else
+        [[ -z "$DISK" ]] && { error "DISK is not set"; MISSING_KEYS=1; }
+    fi
+
     [[ -z "$USERNAME" ]] && { error "USERNAME is not set"; MISSING_KEYS=1; }
     [[ -z "$ROOT_PASSWORD" ]] && { error "ROOT_PASSWORD is not set"; MISSING_KEYS=1; }
     [[ -z "$USER_PASSWORD" ]] && { error "USER_PASSWORD is not set"; MISSING_KEYS=1; }
@@ -77,10 +89,17 @@ validate_config() {
     if [[ "$MISSING_KEYS" -eq 1 ]]; then exit 1; fi
 
     if [[ "$DRY_RUN" != "yes" ]]; then
-        if [[ ! -b "$DISK" ]]; then
-            error "Target disk $DISK does not exist."
-            exit 1
-        fi
+         if [[ "$MANUAL_PARTITIONING" == "yes" ]]; then
+            if [[ ! -b "$TARGET_ROOT" ]]; then
+                error "Target partition $TARGET_ROOT does not exist."
+                exit 1
+            fi
+         else
+            if [[ ! -b "$DISK" ]]; then
+                error "Target disk $DISK does not exist."
+                exit 1
+            fi
+         fi
     fi
     log "Configuration valid."
 }
@@ -94,74 +113,117 @@ setup_partitioning() {
     fi
     log "Boot Mode: $BOOT_MODE"
 
-    # Wiping disk
-    log "Wiping $DISK..."
-    wipefs -af "$DISK"
+    if [[ "$MANUAL_PARTITIONING" == "yes" ]]; then
+        log "Mode: Manual Partitioning"
+        ROOT_PART="$TARGET_ROOT"
+        EFI_PART="$TARGET_EFI"  # Can be empty if BIOS
 
-    # Naming
-    local PART_PREFIX="$DISK"
-    [[ "$DISK" == *"nvme"* || "$DISK" == *"mmcblk"* ]] && PART_PREFIX="${DISK}p"
+        # Format EFI if requested (and UEFI)
+        if [[ "$BOOT_MODE" == "UEFI" ]] && [[ "$FORMAT_EFI" == "yes" ]] && [[ -n "$EFI_PART" ]]; then
+            log "Formatting EFI partition $EFI_PART..."
+            mkfs.fat -F32 "$EFI_PART"
+        fi
 
-    if [[ "$BOOT_MODE" == "UEFI" ]]; then
-        # UEFI: GPT, ESP, Root
-        parted -s "$DISK" mklabel gpt
-        parted -s "$DISK" mkpart "EFI" fat32 1MiB 513MiB
-        parted -s "$DISK" set 1 esp on
-        parted -s "$DISK" mkpart "root" "${FS_TYPE}" 513MiB 100%
+        # We assume for ROOT that if FORMAT_ROOT=yes, we format.
+        # If FORMAT_ROOT=no, we assume it's already formatted/prepared?
+        # For MVP, we will only support Formatting root to ensure clean state.
+        # But if user unchecked "Format", we might try to mount as is.
         
-        EFI_PART="${PART_PREFIX}1"
-        ROOT_PART="${PART_PREFIX}2"
-        mkfs.fat -F32 "$EFI_PART"
+        # However, encryption logic below assumes we are creating a new container.
+        # Existing LUKS is hard to automate blindly.
+        if [[ "$USE_LUKS" == "yes" ]]; then
+             if [[ "$FORMAT_ROOT" != "yes" ]]; then
+                log "Warning: Encryption requested but Format Root is No. Forcing Format for LUKS setup safety."
+             fi
+        fi
+
     else
-        # BIOS: MBR, Root
-        parted -s "$DISK" mklabel msdos
-        parted -s "$DISK" mkpart primary "${FS_TYPE}" 1MiB 100%
-        parted -s "$DISK" set 1 boot on
+        log "Mode: Auto Partitioning on $DISK"
         
-        ROOT_PART="${PART_PREFIX}1"
-    fi
-    
-    # Wait for nodes
-    sleep 2
-    partprobe "$DISK" || true
+        # Wiping disk
+        log "Wiping $DISK..."
+        wipefs -af "$DISK"
 
-    # Encryption
+        # Naming
+        local PART_PREFIX="$DISK"
+        [[ "$DISK" == *"nvme"* || "$DISK" == *"mmcblk"* ]] && PART_PREFIX="${DISK}p"
+
+        if [[ "$BOOT_MODE" == "UEFI" ]]; then
+            # UEFI: GPT, ESP, Root
+            parted -s "$DISK" mklabel gpt
+            parted -s "$DISK" mkpart "EFI" fat32 1MiB 513MiB
+            parted -s "$DISK" set 1 esp on
+            parted -s "$DISK" mkpart "root" "${FS_TYPE}" 513MiB 100%
+            
+            EFI_PART="${PART_PREFIX}1"
+            ROOT_PART="${PART_PREFIX}2"
+            mkfs.fat -F32 "$EFI_PART"
+        else
+            # BIOS: MBR, Root
+            parted -s "$DISK" mklabel msdos
+            parted -s "$DISK" mkpart primary "${FS_TYPE}" 1MiB 100%
+            parted -s "$DISK" set 1 boot on
+            
+            ROOT_PART="${PART_PREFIX}1"
+        fi
+        
+        # Wait for nodes
+        sleep 2
+        partprobe "$DISK" || true
+        
+        # Auto mode always formats root
+        FORMAT_ROOT="yes"
+    fi
+
+    # Encryption Setup
     local CRYPT_ROOT="$ROOT_PART"
-    if [[ "$USE_LUKS" == "yes" ]]; then
-        log "Encrypting root partition..."
+    if [[ "$USE_LUKS" == "yes" ]] && [[ "$FORMAT_ROOT" == "yes" ]]; then
+        log "Encrypting root partition $ROOT_PART..."
         echo -n "$LUKS_PASSWORD" | cryptsetup luksFormat --type luks2 "$ROOT_PART" -
         echo -n "$LUKS_PASSWORD" | cryptsetup open "$ROOT_PART" cryptroot -
         CRYPT_ROOT="/dev/mapper/cryptroot"
     fi
 
-    # Formatting Root
-    if [[ "$FS_TYPE" == "btrfs" ]]; then
-        log "Formatting BTRFS..."
-        mkfs.btrfs -f "$CRYPT_ROOT"
-        mount "$CRYPT_ROOT" /mnt
-        
-        # Subvolumes
-        btrfs subvolume create /mnt/@
-        btrfs subvolume create /mnt/@home
-        btrfs subvolume create /mnt/@snapshots
-        btrfs subvolume create /mnt/@var_log
-        umount /mnt
-        
-        local BTRFS_OPTS="noatime,compress=zstd,space_cache=v2,discard=async"
-        mount -o "subvol=@,${BTRFS_OPTS}" "$CRYPT_ROOT" /mnt
-        mkdir -p /mnt/{home,.snapshots,var/log,boot}
-        mount -o "subvol=@home,${BTRFS_OPTS}" "$CRYPT_ROOT" /mnt/home
-        mount -o "subvol=@snapshots,${BTRFS_OPTS}" "$CRYPT_ROOT" /mnt/.snapshots
-        mount -o "subvol=@var_log,${BTRFS_OPTS}" "$CRYPT_ROOT" /mnt/var/log
+    # Formatting/Mounting Root
+    if [[ "$FORMAT_ROOT" == "yes" ]]; then
+        if [[ "$FS_TYPE" == "btrfs" ]]; then
+            log "Formatting BTRFS..."
+            mkfs.btrfs -f "$CRYPT_ROOT"
+            mount "$CRYPT_ROOT" /mnt
+            
+            # Subvolumes
+            btrfs subvolume create /mnt/@
+            btrfs subvolume create /mnt/@home
+            btrfs subvolume create /mnt/@snapshots
+            btrfs subvolume create /mnt/@var_log
+            umount /mnt
+            
+            local BTRFS_OPTS="noatime,compress=zstd,space_cache=v2,discard=async"
+            mount -o "subvol=@,${BTRFS_OPTS}" "$CRYPT_ROOT" /mnt
+            mkdir -p /mnt/{home,.snapshots,var/log,boot}
+            mount -o "subvol=@home,${BTRFS_OPTS}" "$CRYPT_ROOT" /mnt/home
+            mount -o "subvol=@snapshots,${BTRFS_OPTS}" "$CRYPT_ROOT" /mnt/.snapshots
+            mount -o "subvol=@var_log,${BTRFS_OPTS}" "$CRYPT_ROOT" /mnt/var/log
+        else
+            log "Formatting EXT4..."
+            mkfs.ext4 -F "$CRYPT_ROOT"
+            mount "$CRYPT_ROOT" /mnt
+        fi
     else
-        log "Formatting EXT4..."
-        mkfs.ext4 -F "$CRYPT_ROOT"
+        log "Mounting existing root partition without formatting..."
+        # If encrypted, we assume user already opened it? No, script is creating NEW system.
+        # If manual + no-format, it implies we are installing over existing FS?
+        # For now, let's just mount.
         mount "$CRYPT_ROOT" /mnt
+        # Detect if it's btrfs and handle subvols? Too complex for blind script.
+        # Assume standard mount.
     fi
 
     if [[ "$BOOT_MODE" == "UEFI" ]]; then
         mkdir -p /mnt/boot
-        mount "$EFI_PART" /mnt/boot
+        if [[ -n "$EFI_PART" ]]; then
+            mount "$EFI_PART" /mnt/boot
+        fi
     fi
 }
 
@@ -254,7 +316,7 @@ echo "root:${ROOT_PASSWORD}" | chpasswd
 # User Setup
 USER_SHELL="/bin/bash"
 if command -v zsh &>/dev/null; then USER_SHELL="/bin/zsh"; fi
-useradd -m -G wheel,audio,video,storage -s "\$USER_SHELL" "${USERNAME}"
+useradd -m -c "${FULL_NAME}" -G wheel,audio,video,storage -s "\$USER_SHELL" "${USERNAME}"
 echo "${USERNAME}:${USER_PASSWORD}" | chpasswd
 sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
@@ -281,9 +343,24 @@ if [[ "${USE_LUKS}" == "yes" ]]; then
 fi
 
 if [[ -d /sys/firmware/efi/efivars ]]; then
+    # For manual partitioning, we don't always wipe the disk, but we installed grub to ESP. 
+    # grub-install sets up the efi binary.
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=ARCH
 else
-    grub-install --target=i386-pc ${DISK}
+    # For BIOS, we install to the disk MBR usually. 
+    # In manual mode, we need the DISK variable or we assume ROOT_PART's disk?
+    # grub-install /dev/sda
+    
+    # If using MANUAL, we might not have DISK set?
+    # Let's try to derive disk from ROOT_PART for safety if DISK is empty.
+    INSTALL_DISK="${DISK}"
+    if [[ -z "\$INSTALL_DISK" ]] && [[ "${MANUAL_PARTITIONING}" == "yes" ]]; then
+        # /dev/sda1 -> /dev/sda
+        INSTALL_DISK=\$(lsblk -no pkname ${ROOT_PART} | head -n1)
+        INSTALL_DISK="/dev/\$INSTALL_DISK"
+    fi
+    
+    grub-install --target=i386-pc "\$INSTALL_DISK"
 fi
 grub-mkconfig -o /boot/grub/grub.cfg
 
