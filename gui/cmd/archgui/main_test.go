@@ -11,8 +11,14 @@ func TestGenerateConfig(t *testing.T) {
 	user := "alice"
 	rootPass := "secretroot"
 	userPass := "secretuser"
+	fs := "btrfs"
+	luksPass := "cryptpass"
+	desktop := "kde"
+	shell := "zsh"
+	encrypt := true
+	nvidia := true
 
-	config := generateConfig(disk, host, user, rootPass, userPass)
+	config := generateConfig(disk, host, user, rootPass, userPass, fs, luksPass, desktop, shell, encrypt, nvidia)
 
 	checks := map[string]string{
 		"DISK":           disk,
@@ -20,6 +26,12 @@ func TestGenerateConfig(t *testing.T) {
 		"USERNAME":       user,
 		"ROOT_PASSWORD":  rootPass,
 		"USER_PASSWORD":  userPass,
+		"FS_TYPE":        fs,
+		"USE_LUKS":       "yes",
+		"LUKS_PASSWORD":  luksPass,
+		"DESKTOP_ENV":    desktop,
+		"SHELL_CHOICE":   shell,
+		"HAS_NVIDIA":     "yes",
 		"NONINTERACTIVE": "yes",
 	}
 
