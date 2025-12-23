@@ -97,22 +97,34 @@ if [[ ! -f "$INSTALLER_BIN" ]]; then
     chmod +x archgui
 fi
 
-# 5. Create xinitrc
+# 5. Create xinitrc and Fluxbox config
 echo ">>> Configuring X session..."
+
+# Configure Fluxbox to be minimal (no toolbar)
+mkdir -p /root/.fluxbox
+cat > /root/.fluxbox/init <<EOF
+session.screen0.toolbar.visible: false
+session.screen0.tabs.usePixmap: false
+session.screen0.tabs.maxOver: false
+EOF
+
 cat > /root/.xinitrc <<EOF
-# Set Locale to fix Fyne warnings (prevents "tag is not well-formed" error)
+# Set Locale
 export LANG=en_US.UTF-8
 
-# Start Fluxbox
+# Set black background
+xsetroot -solid black
+
+# Start Fluxbox (Window Manager) in background
 fluxbox &
 
 # Start our Installer
 # We must be in the WORK_DIR so it can find backend/arch-install.sh
 cd "$WORK_DIR"
 
-# Launch terminal with the installer
-# We use a geometry that fits well, and maximize the installer if possible (handled in Go)
-exec xterm -geometry 120x40+0+0 -e ./archgui
+# Launch installer directly (no xterm wrapper)
+# This makes the install window the only thing visible (along with WM decorations)
+exec ./archgui
 EOF
 
 # 6. Launch
