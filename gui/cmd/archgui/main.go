@@ -21,7 +21,8 @@ func generateConfig(disk, hostname, username, rootPass, userPass string) string 
 func main() {
 	a := app.New()
 	w := a.NewWindow("Arch Linux Installer")
-	w.Resize(fyne.NewSize(800, 600))
+	w.Resize(fyne.NewSize(1024, 768))
+	w.CenterOnScreen()
 
 	// UI Elements
 	title := widget.NewLabelWithStyle("Arch Linux GUI Installer", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})

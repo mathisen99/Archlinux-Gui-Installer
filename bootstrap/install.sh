@@ -100,13 +100,19 @@ fi
 # 5. Create xinitrc
 echo ">>> Configuring X session..."
 cat > /root/.xinitrc <<EOF
+# Set Locale to fix Fyne warnings (prevents "tag is not well-formed" error)
+export LANG=en_US.UTF-8
+
 # Start Fluxbox
 fluxbox &
 
 # Start our Installer
 # We must be in the WORK_DIR so it can find backend/arch-install.sh
 cd "$WORK_DIR"
-exec xterm -e ./archgui
+
+# Launch terminal with the installer
+# We use a geometry that fits well, and maximize the installer if possible (handled in Go)
+exec xterm -geometry 120x40+0+0 -e ./archgui
 EOF
 
 # 6. Launch
