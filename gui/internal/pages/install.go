@@ -2,9 +2,11 @@ package pages
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"time"
 
 	"archgui/gui/internal/state"
@@ -16,8 +18,12 @@ import (
 
 type InstallPage struct {
 	logOutput *widget.Entry
+	logChan   chan string
+	fullLog   bytes.Buffer
 	started   bool
 }
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func (p *InstallPage) Title() string {
 	return "Installing"
@@ -30,8 +36,10 @@ func (p *InstallPage) Content(config *state.InstallConfig, ctrl WizardController
 	// In VContainer, we can wrap in Scroll
 
 	// We delay start slightly to ensure UI renders
+	// We delay start slightly to ensure UI renders
 	if !p.started {
 		p.started = true
+		go p.processLogs()
 		go p.RunInstall(config, ctrl)
 	}
 
@@ -94,12 +102,39 @@ func (p *InstallPage) RunInstall(config *state.InstallConfig, ctrl WizardControl
 }
 
 func (p *InstallPage) AppendLog(msg string) {
-	str := msg + "\n"
-	fyne.Do(func() {
-		curr := p.logOutput.Text
-		p.logOutput.SetText(curr + str)
-		p.logOutput.Refresh()
-	})
+	p.logChan <- msg
+}
+
+func (p *InstallPage) processLogs() {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	var pending bytes.Buffer
+
+	for {
+		select {
+		case msg := <-p.logChan:
+			pending.WriteString(msg)
+			pending.WriteByte('\n')
+		case <-ticker.C:
+			if pending.Len() > 0 {
+				// Strip ANSI
+				clean := ansiRegex.ReplaceAllString(pending.String(), "")
+				pending.Reset()
+
+				// Update full log
+				p.fullLog.WriteString(clean)
+				fullContent := p.fullLog.String()
+
+				// Update UI
+				fyne.Do(func() {
+					p.logOutput.SetText(fullContent)
+					p.logOutput.Refresh()                         // Auto-scroll handled by Scroll container usually
+					p.logOutput.CursorRow = len(p.logOutput.Text) // Attempt to scroll to end
+				})
+			}
+		}
+	}
 }
 
 func (p *InstallPage) OnNext(config *state.InstallConfig) error {
@@ -107,7 +142,9 @@ func (p *InstallPage) OnNext(config *state.InstallConfig) error {
 }
 
 func NewInstallPage() *InstallPage {
-	return &InstallPage{}
+	return &InstallPage{
+		logChan: make(chan string, 1000),
+	}
 }
 
 func boolToString(b bool) string {
