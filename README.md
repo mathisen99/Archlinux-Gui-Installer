@@ -49,8 +49,13 @@ Run the backend script directly with a mock configuration to verify validation l
 
 The `bootstrap/install.sh` script is the entry point for the live ISO.
 
+To run the installer from a live environment:
 ```bash
-# Validate syntax
+curl -fsSL https://raw.githubusercontent.com/mathisen99/Archlinux-Gui-Installer/main/bootstrap/install.sh | bash
+```
+
+To validate syntax locally:
+```bash
 bash -n bootstrap/install.sh
 ```
 

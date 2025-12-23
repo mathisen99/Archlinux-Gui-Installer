@@ -32,19 +32,44 @@ pacman -Sy
 # glibc: usually present, but ensure base deps
 pacman -S --noconfirm --needed xorg-server xorg-xinit fluxbox xterm ttf-dejavu
 
-# 4. Download Release
-# TODO: Replace with actual GitHub Release URL once published.
-# For now, we assume development mode or local testing.
-INSTALLER_BIN="./archgui"
+# 4. Download Components
+WORK_DIR="/opt/arch-installer" # Use /opt or /root
+mkdir -p "$WORK_DIR/backend"
+cd "$WORK_DIR"
 
+# Base URL for downloading artifacts
+# User's Repo: https://github.com/mathisen99/Archlinux-Gui-Installer
+REPO_URL="https://raw.githubusercontent.com/mathisen99/Archlinux-Gui-Installer/main"
+RELEASE_URL="https://github.com/mathisen99/Archlinux-Gui-Installer/releases/latest/download"
+
+echo ">>> Downloading installer components..."
+
+# Download Backend Script
+if [[ ! -f "backend/arch-install.sh" ]]; then
+    echo " -> Downloading backend/arch-install.sh..."
+    # Using curl -f to fail on 404
+    curl -fsSL -o backend/arch-install.sh "$REPO_URL/backend/arch-install.sh" || {
+        echo "Error: Failed to download backend script. Check REPO_URL."
+        exit 1
+    }
+    chmod +x backend/arch-install.sh
+fi
+
+# Download GUI Binary
+INSTALLER_BIN="./archgui"
 if [[ ! -f "$INSTALLER_BIN" ]]; then
-    echo ">>> Installer binary not found locally."
-    # echo "Downloading from GitHub..."
-    # curl -L -o archgui https://github.com/<user>/<repo>/releases/latest/download/archgui
-    # chmod +x archgui
-    echo "PLEASE PLACE 'archgui' BINARY HERE OR UPDATE URL."
-    # exit 1 
-    # (Proceeding for now to allow local testing if possible)
+    echo " -> Downloading archgui binary..."
+    curl -fsSL -o archgui "$RELEASE_URL/archgui" || {
+        echo "Error: Failed to download archgui binary. Check RELEASE_URL."
+        # Fallback for testing if file exists in current dir (dev mode)
+        if [[ -f "/tmp/archgui" ]]; then
+             cp /tmp/archgui .
+        else 
+             echo "Critical: Installer binary not found."
+             exit 1
+        fi
+    }
+    chmod +x archgui
 fi
 
 # 5. Create xinitrc
@@ -54,8 +79,9 @@ cat > /root/.xinitrc <<EOF
 fluxbox &
 
 # Start our Installer
-# Run in xterm to see logs if GUI fails, or run directly
-exec ./archgui
+# We must be in the WORK_DIR so it can find backend/arch-install.sh
+cd "$WORK_DIR"
+exec xterm -e ./archgui
 EOF
 
 # 6. Launch
