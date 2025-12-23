@@ -55,7 +55,9 @@ pacman -Sy
 # fluxbox: lightweight WM
 # xterm: terminal for debug
 # glibc: usually present, but ensure base deps
-pacman -S --noconfirm --needed xorg-server xorg-xinit fluxbox xterm ttf-dejavu
+# Install minimal X environment
+# Added 'feh' for wallpaper support
+pacman -S --noconfirm --needed xorg-server xorg-xinit fluxbox xterm ttf-dejavu feh
 
 # 4. Download Components
 WORK_DIR="/opt/arch-installer" # Use /opt or /root
@@ -78,6 +80,12 @@ if [[ ! -f "backend/arch-install.sh" ]]; then
         exit 1
     }
     chmod +x backend/arch-install.sh
+fi
+
+# Download Wallpaper
+if [[ ! -f "wallpaper.png" ]]; then
+    echo " -> Downloading wallpaper..."
+    curl -fsSL -o wallpaper.png "$REPO_URL/gui/assets/wallpaper.png" || echo "Warning: Wallpaper download failed."
 fi
 
 # Download GUI Binary
@@ -112,8 +120,12 @@ cat > /root/.xinitrc <<EOF
 # Set Locale
 export LANG=en_US.UTF-8
 
-# Set black background
-xsetroot -solid black
+# Set Background
+if [[ -f "$WORK_DIR/wallpaper.png" ]]; then
+    feh --bg-scale "$WORK_DIR/wallpaper.png"
+else
+    xsetroot -solid black
+fi
 
 # Start Fluxbox (Window Manager) in background
 fluxbox &
