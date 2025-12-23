@@ -19,11 +19,30 @@ if ! ping -c 1 google.com &> /dev/null; then
     exit 1
 fi
 
+echo ">>> Debug: Current Disk and RAM usage:"
+df -h / /run/archiso/cow 2>/dev/null || df -h /
+free -h
+
 echo ">>> Expanding COW space..."
-# Remount COW (RAM disk) to use more space. Required for Xorg install on standard ISOs.
-# We attempt to resize to 2G or 75% of RAM, whichever is safe? 
-# Simplest approach: Remount with size=4G (kernel handles limits if RAM is lower, usually OOMs, but better than instant fail)
-mount -o remount,size=4G /run/archiso/cow || echo "Warning: Failed to remount COW. Disk space might be low."
+# Try to find the actual mount point of the COW partition
+# Usually /run/archiso/cow or /run/archiso/cowspace
+COW_PATH="/run/archiso/cow"
+if ! mountpoint -q "$COW_PATH"; then
+    COW_PATH="/run/archiso/cowspace"
+fi
+
+# Remount with 4G explicitly
+mount -o remount,size=4G "$COW_PATH" || echo "Warning: Failed to remount $COW_PATH"
+
+echo ">>> Post-resize Disk usage:"
+df -h "$COW_PATH" || df -h /
+
+# Check if we actually have enough space (need ~500MB+ for Xorg)
+FREE_KB=$(df -k "$COW_PATH" | awk 'NR==2 {print $4}')
+if [[ "$FREE_KB" -lt 1000000 ]]; then # Less than 1GB free
+    echo "WARNING: Less than 1GB free in COW. Installation might fail."
+    echo "Recommendation: Increase VM RAM to at least 2GB/4GB."
+fi
 
 # 3. Install Dependencies
 echo ">>> Installing Xorg and Window Manager..."
