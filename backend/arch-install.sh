@@ -366,7 +366,7 @@ grub-mkconfig -o /boot/grub/grub.cfg
 
 # Oh-My-Zsh
 if [[ "${SHELL_CHOICE}" == "zsh-ohmyzsh" ]]; then
-    log "Installing Oh-My-Zsh for user ${USERNAME}..."
+    echo "Installing Oh-My-Zsh for user ${USERNAME}..."
     # Install git and curl just in case (though base/base-devel usually has them, or we added them)
     # We should ensure they are present.
     pacman -S --noconfirm git curl
