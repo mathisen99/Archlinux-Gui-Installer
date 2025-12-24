@@ -372,7 +372,7 @@ if [[ "${SHELL_CHOICE}" == "zsh-ohmyzsh" ]]; then
     pacman -S --noconfirm git curl
     
     # Run installer as the user
-    su - ${USERNAME} -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'
+    su - ${USERNAME} -c 'sh -c "\$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'
 fi
 
 EOF
